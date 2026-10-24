@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>동맹전 음성 알림</title>
+<style>
+:root{--bg:#f6f4ef;--fg:#1d1b16;--card:#fff;--mut:#7a766b;--ac:#b3261e;--bd:#e3dfd3;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15140f;--fg:#f1eee4;--card:#211f18;--mut:#a09b8c;--ac:#ff6b5e;--bd:#37342a}}
+:root[data-theme="dark"]{--bg:#15140f;--fg:#f1eee4;--card:#211f18;--mut:#a09b8c;--ac:#ff6b5e;--bd:#37342a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;padding:16px;max-width:480px;margin:auto}
+h1{font-size:18px;margin:4px 0 12px}
+.clock{font-size:76px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums;margin:8px 0}
+.next{text-align:center;color:var(--mut);margin-bottom:14px;min-height:22px}
+.row{display:flex;gap:8px;margin-bottom:8px}
+button{flex:1;padding:14px 8px;font-size:16px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}
+button.p{background:var(--ac);color:#fff;border:0;font-weight:700}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:6px 14px;margin-top:12px}
+.ev{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd);font-size:15px}
+.ev:last-child{border:0}.ev.done{opacity:.35;text-decoration:line-through}.ev b{font-variant-numeric:tabular-nums}
+small{color:var(--mut);display:block;margin-top:10px;line-height:1.5}
+</style></head><body>
+<h1>⚔️ 연운 동맹전 알림</h1>
+<div class="clock" id="clk">30:00</div>
+<div class="next" id="nxt"></div>
+<div class="row"><button id="au" style="flex:2">토·일 21:35 자동</button></div>
+<div class="row"><button class="p" id="go">수동 시작</button><button id="rs">초기화</button></div>
+<div class="row"><button id="m5">-5초</button><button id="p5">+5초</button><button id="tst">음성 테스트</button></div>
+<div class="card" id="list"></div>
+<small>게임 시작과 동시에 [시작]을 누르세요. 시간이 어긋나면 ±5초로 맞추세요. 화면을 켜 둬야 소리가 안정적으로 납니다. 무음 모드/볼륨을 확인하세요.</small>
+<script>
+const T=(m,s=0)=>m*60+s;
+// 남은 시간(초) 기준 이벤트
+const EV=[
+ [T(26,30),"30초 뒤 장표 구간 시작"],[T(26),"장표 구간 시작"],[T(24),"장표 구간 종료"],
+ [T(25,30),"30초 뒤 정글몹"],[T(25),"정글몹 등장"],
+ [T(20,30),"30초 뒤 정글몹"],[T(20),"정글몹 등장"],
+ [T(16,30),"30초 뒤 골록 구간 시작"],[T(16),"골록 구간 시작"],[T(14),"골록 구간 종료"],
+ [T(15,30),"30초 뒤 정글몹"],[T(15),"정글몹 등장"],
+ [T(10,30),"30초 뒤 정글몹"],[T(10),"정글몹 등장"],
+ [T(5,30),"30초 뒤 정글몹"],[T(5),"정글몹 등장"],
+ [0,"동맹전 종료"]
+].sort((a,b)=>b[0]-a[0]);
+const fmt=s=>{s=Math.max(0,Math.ceil(s));return String(s/60|0).padStart(2,"0")+":"+String(s%60).padStart(2,"0")};
+let auto=false,autoT=0,run=false,start=0,off=0,base=0,fired=new Set(),wl=null,tick=null;
+const $=id=>document.getElementById(id);
+function speak(t){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang="ko-KR";u.rate=1.05;
+ const v=speechSynthesis.getVoices().find(v=>v.lang&&v.lang.startsWith("ko"));if(v)u.voice=v;speechSynthesis.speak(u)}catch(e){}}
+function tgt(){const n=new Date(),d=new Date(n);d.setHours(21,35,0,0);for(let i=0;i<8;i++){const c=new Date(d);c.setDate(d.getDate()+i);const w=c.getDay();if((w==0||w==6)&&c.getTime()+18e5>n.getTime())return c.getTime()}}
+function remain(){if(auto)return 1800-(Date.now()-autoT)/1000;return run?30*60-((Date.now()-start)/1000)-off:30*60-base}
+function render(){
+ const r=remain();$("clk").textContent=r>1800?fmt(r-1800):fmt(r);if(r>1800){$("nxt").textContent="시작까지 대기 · "+new Date(autoT).toLocaleString("ko-KR",{month:"numeric",day:"numeric",weekday:"short",hour:"2-digit",minute:"2-digit"})+" 시작";}
+ if(auto&&r<=-5)return $("rs").onclick();
+ const nx=EV.find(e=>e[0]<r&&!fired.has(e[0]+e[1]));
+ if(r<=1800)$("nxt").textContent=nx?`다음: ${fmt(nx[0])} ${nx[1]}`:"";
+ $("list").innerHTML=EV.map(e=>`<div class="ev ${fired.has(e[0]+e[1])||e[0]>=r+1?"done":""}"><span>${e[1]}</span><b>${fmt(e[0])}</b></div>`).join("");
+}
+function loop(){
+ const r=remain();
+ for(const e of EV){const k=e[0]+e[1];if(!fired.has(k)&&r<=e[0]){fired.add(k);if(r>e[0]-3)speak(e[1])}}
+ render();
+}
+async function lock(){try{wl=await navigator.wakeLock.request("screen")}catch(e){}}
+$("au").onclick=()=>{if(auto)return $("rs").onclick();$("rs").onclick();autoT=tgt();auto=true;$("au").textContent="자동 대기 중 (누르면 취소)";speak("자동 알림이 설정되었습니다");lock();tick=setInterval(loop,250);render()};
+$("go").onclick=()=>{if(auto)return;
+ if(!run){
+  start=Date.now();off=base;run=true;$("go").textContent="일시정지";
+  start=Date.now()-0;off=base;speak("알림을 시작합니다");lock();tick=setInterval(loop,250);
+ }else{base=30*60-remain();run=false;clearInterval(tick);$("go").textContent="계속";try{wl&&wl.release()}catch(e){}}
+ render();
+};
+$("rs").onclick=()=>{auto=false;$("au").textContent="토·일 21:35 자동";run=false;clearInterval(tick);base=0;off=0;fired.clear();$("go").textContent="수동 시작";render();speechSynthesis.cancel()};
+function adj(d){if(auto)autoT-=d*1000;else if(run)off+=d;else base+=d;fired=new Set([...fired].filter(()=>false));
+ const r=remain();EV.forEach(e=>{if(r<=e[0]-0.01&&(e[0]-r)>3)fired.add(e[0]+e[1])});render()}
+$("m5").onclick=()=>adj(5);$("p5").onclick=()=>adj(-5);
+$("tst").onclick=()=>speak("정글몹 등장. 장표 구간 시작. 골록 구간 시작.");
+speechSynthesis.onvoiceschanged=()=>{};
+render();
+</script></body></html>
